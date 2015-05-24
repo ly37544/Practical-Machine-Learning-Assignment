@@ -104,4 +104,4 @@ actans <- c('B','A','B','A','A','E','D','B','A','A','B','C','B','A','E','E','A',
 acc <- sum(actans == as.character(ans))/20.0
 ```
 
-The final accuracy on test data is 80%. That is, 16 out of 20 tests are classified correctly. 
+The final accuracy on test data is 80%. That is, 16 out of 20 tests are classified correctly. This is a little lower accuracy than cross validation. I think this situation will improve if test dataset consists of enough items of data.
