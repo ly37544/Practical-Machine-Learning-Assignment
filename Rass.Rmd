@@ -1,0 +1,107 @@
+---
+title: "Practical ML Assignment"
+author: "Jack Li"
+date: "Wednesday, May 20, 2015"
+output: html_document
+---
+
+###Synopsis of the Dataset
+
+This dataset is about quantified self movement of human activities. The goal is obvious: predict the manner they do when doing exercises with the data availible. They can be divided into five classes denoted respectively as "A,B,C,D,E" in the variable "classe".
+
+###Data Cleaning and Preprocessing
+
+There are too many redundant variables in the dataset. Here my cleaning principles are as follows:
+
+1.Remove those with significant portion of NAs and NULLs.
+
+2.Remove those that seem to have no impact on predictions or influence indirectly on the predict. For example, you may prefer to do certain kind of exercise at a specific time. In this case time somehow decides activity class biasely, but only indirectly. Also I rule out subjects(user.name) who pose the activity for a similar reason.
+
+```{r,echo=FALSE,cache=TRUE,results='hide'}
+library(caret)
+library(ggplot2)
+set.seed(36448)
+pml.training <- read.csv("~/Movies/Coursera/Introduction to Computational Finance and Financial Econometrics/pml-training.csv", stringsAsFactors=FALSE)
+pml.testing <- read.csv("~/Movies/Coursera/Introduction to Computational Finance and Financial Econometrics/pml-testing.csv", stringsAsFactors=FALSE)
+simplify <- function(x){
+  len <- length(x)
+  nobservation <- nrow(x) 
+  retVec <- c()
+  for (i in 1:len){
+    temp1 <- sum(is.na(x[,i]) * 1)
+    temp2 <- sum(x[,i] == '')
+    if (temp1 > 0.5 * nobservation | temp2 > 0.5 * nobservation){
+      retVec <- c(retVec,i)
+    }
+  }
+  return(retVec)
+}
+Rawtraindata <- pml.training[,-simplify(pml.training)]
+Rawtraindata <- Rawtraindata[,-1:-7]
+Rawtestdata <- pml.testing[,-simplify(pml.testing)]
+Rawtestdata <- Rawtestdata[,-1:-7]
+trainlabel <- Rawtraindata$classe
+```
+
+
+After cleaning there are still more than 50 variables in the dataset. Training this amount of data could be time consuming. I have to perform dimension reduction in order to compress the time cost on training and at the same time keep as much information as possible. Here PCA method is the chosen one. Of course, I should first split data and create cross validation dataset.
+
+```{r,echo=FALSE,results='hide',cache=TRUE}
+prep <- preProcess(Rawtraindata[,-53],method = c('center','scale'))
+Rawdata <- predict(prep,Rawtraindata[,-53])
+intrain <- createDataPartition(trainlabel,p = 0.65,list = F)
+traindata <- Rawdata[intrain,]
+trainlb <- trainlabel[intrain]
+cvdata <- Rawdata[-intrain,]
+cvlb <- trainlabel[-intrain]
+prepca <- preProcess(traindata,method = 'pca',thresh = 0.95)
+traindata <- predict(prepca,traindata)
+traindata1 <- cbind(traindata,trainlb)
+```
+
+Caculate the eignvalues of covariance matrix based on training data. Now take a closer look at the information that the eignvalues trying to convey.
+
+```{r,echo=FALSE,cache=TRUE}
+covmat <- cov(Rawdata)
+eigval <- sort(eigen(covmat,only.values = T)$values)
+sumthre <- cumsum(eigval) / sum(eigval)
+plot(1:52,sumthre,type = "l",ylab = 'Reserved Information',xlab = 'Number of Reserved Variable')
+```
+
+So the potion of reserved information will rise faster if keeping more than 20 variables,which means about first 20 varibles contain negligible insight of original data. 
+At last, after PCA preprocess, only 25 columns are left with 95% information reserved. This seems to be an acceptable amount of dimensions. Take a closer look at first two columns of data after PCA.
+
+```{r,echo=FALSE,cache=TRUE}
+ggplot(traindata1,mapping = aes(x = PC1,y = PC2,colour = trainlb)) + geom_point()
+```
+
+###Model Training
+
+A single tree classification would lead to very poor results. It is meaningless to spare time and room for a single tree classifier. According to my 10-times test on the cross validation data with simple tree classifier, the average out-of-sample correct rate is only about 34.6 percent. A more sophisticated classifier is needed.
+Randomforests is no doubtedly a good choice. An apparent disadvantage is that randomforests training is a little bit time-consuming.
+
+```{r,echo=FALSE,results='hide',cache=TRUE}
+cvdata1 <- predict(prepca,cvdata)
+modelrf <- train(trainlb ~ .,data = traindata1,method = 'rf')
+```
+
+Let's forcus on results.
+
+```{r,echo=FALSE,cache=TRUE}
+outcome <- predict(modelrf,cvdata1)
+confusionMatrix(outcome,cvlb)
+```
+
+The performance of 97 percent correct rate is almost perfect. Both sensitivity and specificity are pretty well. Such model is sufficiently good for classifying the dataset. At last, I shall make prediction on the testing dataset.
+
+```{r,echo=F,cache=TRUE}
+pretest <- preProcess(Rawtestdata[,-53],method = c('center','scale'))
+testpre <- predict(pretest,Rawtestdata[,-53])
+testdata <- predict(prepca,testpre)
+ans <- predict(modelrf,testdata)
+as.character(ans)
+actans <- c('B','A','B','A','A','E','D','B','A','A','B','C','B','A','E','E','A','B','B','B')
+acc <- sum(actans == as.character(ans))/20.0
+```
+
+The final accuracy on test data is 80%. That is, 16 out of 20 tests are classified correctly. 
